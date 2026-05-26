@@ -239,15 +239,18 @@ def _read_ml(data_bytes):
 
 def _read_vhsys(data_bytes):
     """
-    vhsys.xls é na verdade HTML disfarçado de XLS — usa read_html.
-    Valores de Valor Total vêm como string 'R$ 1.180,00'.
+    Detecta automaticamente o formato do arquivo VHsys:
+    - OLE2 (magic d0cf11e0): XLS real → pd.read_excel com xlrd
+    - Caso contrário: HTML disfarçado de XLS → pd.read_html
     Remove colunas Unnamed extras.
     """
-    tables = pd.read_html(BytesIO(data_bytes), encoding="utf-8")
-    # pegar a maior tabela (a principal)
-    df = max(tables, key=lambda t: t.shape[0] * t.shape[1])
-    # remover colunas completamente vazias (Unnamed)
-    df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    OLE2_MAGIC = b"\xd0\xcf\x11\xe0"
+    if data_bytes[:4] == OLE2_MAGIC:
+        df = pd.read_excel(BytesIO(data_bytes), engine="xlrd")
+    else:
+        tables = pd.read_html(BytesIO(data_bytes), encoding="utf-8", flavor="lxml")
+        df = max(tables, key=lambda t: t.shape[0] * t.shape[1])
+    df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
     df = df.dropna(how="all").reset_index(drop=True)
     df.columns = [str(c).strip() for c in df.columns]
     return df
@@ -625,7 +628,7 @@ with tab_filtros:
         _nf1, _nf2 = st.columns(2)
         nf_ml_min = _nf1.number_input(
             "NF ≥", min_value=0, value=0, step=1, key="ml_nf_min",
-            help="0 = sem limite inferior"
+            help="Use o mesmo valor de NF mínima (Contabilidade). Ex: se NF mínima = 6889, coloque 6889 aqui. 0 = sem limite inferior."
         )
         nf_ml_max = _nf2.number_input(
             "NF ≤", min_value=0, value=0, step=1, key="ml_nf_max",
